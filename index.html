@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Шинэбаяр Даваасүрэн — Танилцуулга</title>
+<style>
+  :root {
+    --bg: #0a0a1a;
+    --wall: #2233ff;
+    --wall-glow: #4455ff;
+    --dot: #ffd966;
+    --text: #e8e8f0;
+    --accent: #ffd700;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  header {
+    text-align: center;
+    padding: 18px 12px 8px;
+  }
+  header h1 {
+    color: var(--accent);
+    font-size: clamp(18px, 4vw, 30px);
+    letter-spacing: 3px;
+    text-shadow: 0 0 12px rgba(255, 215, 0, .5);
+  }
+  header p { font-size: clamp(11px, 2.5vw, 14px); opacity: .75; margin-top: 4px; }
+  #hud {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 8px;
+    font-size: 12px;
+  }
+  .chip {
+    border: 1px solid #444;
+    border-radius: 12px;
+    padding: 3px 10px;
+    opacity: .5;
+    transition: all .3s;
+  }
+  .chip.visited {
+    opacity: 1;
+    border-color: var(--chip-color, var(--accent));
+    color: var(--chip-color, var(--accent));
+    box-shadow: 0 0 8px var(--chip-color, var(--accent));
+  }
+  #score { color: var(--dot); padding: 3px 10px; }
+  #gameWrap {
+    position: relative;
+    width: min(96vw, 672px);
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    border-radius: 8px;
+  }
+  /* ---------- modal ---------- */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5,5,20,.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 16px;
+  }
+  #overlay.open { display: flex; }
+  #modal {
+    background: #11112b;
+    border: 2px solid var(--modal-color, var(--accent));
+    box-shadow: 0 0 30px var(--modal-color, var(--accent));
+    border-radius: 12px;
+    max-width: 560px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 28px;
+    position: relative;
+    animation: pop .25s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #modal h2 {
+    color: var(--modal-color, var(--accent));
+    margin-bottom: 14px;
+    letter-spacing: 2px;
+  }
+  #modal .content { font-size: 14px; line-height: 1.7; }
+  #modal .content h3 { color: var(--accent); margin: 14px 0 4px; font-size: 14px; }
+  #modal .content ul { margin: 6px 0 6px 20px; }
+  #modal .content a { color: #6cf; }
+  #modalClose {
+    position: absolute;
+    top: 10px; right: 14px;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 22px;
+    cursor: pointer;
+  }
+  #modal .hint { margin-top: 16px; font-size: 11px; opacity: .5; }
+  /* ---------- touch controls ---------- */
+  #dpad {
+    display: none;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 4px;
+    margin: 12px 0 24px;
+    user-select: none;
+  }
+  #dpad button {
+    background: #1a1a3a;
+    border: 1px solid #3344aa;
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 20px;
+    touch-action: manipulation;
+  }
+  #dpad button:active { background: #2a2a5a; }
+  @media (pointer: coarse) { #dpad { display: grid; } }
+  #winBanner {
+    display: none;
+    color: var(--accent);
+    font-size: 14px;
+    padding: 10px;
+    text-shadow: 0 0 10px var(--accent);
+    animation: pop .4s;
+    text-align: center;
+  }
+  footer { font-size: 11px; opacity: .4; padding: 12px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ШИНЭБАЯР ДАВААСҮРЭН</h1>
+  <p>Сум / WASD товчоор (утсан дээр шудрах) төөрдөг байшингаар аялаарай. Хаалга бүрийн цаана намайг таних түлхүүр бий!</p>
+</header>
+
+<div id="hud">
+  <span id="score">● 0</span>
+</div>
+
+<div id="gameWrap">
+  <canvas id="game" width="672" height="480"></canvas>
+</div>
+
+<div id="winBanner">★ Та бүх хаалгыг нээлээ — одоо ажилд авахаа л шийдэх үлдлээ! 😎 ★</div>
+
+<div id="dpad">
+  <span></span><button data-dir="up">▲</button><span></span>
+  <button data-dir="left">◀</button><span></span><button data-dir="right">▶</button>
+  <span></span><button data-dir="down">▼</button><span></span>
+</div>
+
+<div id="overlay">
+  <div id="modal">
+    <button id="modalClose">✕</button>
+    <h2 id="modalTitle"></h2>
+    <div class="content" id="modalBody"></div>
+    <p class="hint">ESC эсвэл ✕ дарж тоглоом руу буцна</p>
+  </div>
+</div>
+
+<footer>Интерактив танилцуулга · HTML5 Canvas · © 2026 Шинэбаяр Даваасүрэн</footer>
+
+<script>
+/* ════════════════════════════════════════════════════════════
+   CV DATA — EDIT THIS SECTION WITH YOUR OWN INFO
+   ════════════════════════════════════════════════════════════ */
+const CV_DATA = {
+  A: {
+    title: "НАМТАР",
+    color: "#ffd700",
+    label: "Намтар",
+    html: `
+      <p>Сайн уу, би <strong>Шинэбаяр Даваасүрэн</strong> 👋</p>
+      <p>Миний хамгийн том давуу тал — <strong>сурах хурд</strong>. Шинэ хэл, шинэ технологи, танил бус систем... юу ч байсан хамаагүй, сурчихаад л ажлаа хийчихдэг.</p>
+      <p>2020 оноос хойш программистаар тасралтгүй хөгжиж байгаа бөгөөд ажил хоорондын завсарлагааг ч сул өнгөрөөдөггүй — гэртээ өөрийн төслүүдээ хийж, ур чадвараа үргэлж ирлэж байдаг.</p>
+      <p>Таны өмнө байгаа энэ тоглоом ч гэсэн тэр сониуч зангийн минь нэг жишээ 🟡</p>`
+  },
+  S: {
+    title: "УР ЧАДВАР",
+    color: "#00e5ff",
+    label: "Чадвар",
+    html: `
+      <h3>💻 Программчлал — хязгааргүй</h3>
+      <ul><li>Ямар ч хэл: JavaScript, TypeScript, Python, Java, C#, PHP, Go... нэрлэсэн бүхэн дээр ажиллана</li><li>Ямар ч өгөгдлийн сан: MySQL, PostgreSQL, MongoDB, Oracle — SQL ч бай, NoSQL ч бай, бүгд</li><li>Шинэ framework, шинэ технологи — ямар ч асуудалгүй, шууд ажиллаад явна</li></ul>
+      <h3>🤖 AI — миний хүчирхэг зэвсэг</h3>
+      <ul><li>AI хэрэгслүүдийг ажилдаа маш сайн ашиглаж, бүтээмжээ хэд дахин өсгөдөг</li></ul>
+      <h3>🤝 Харилцаа</h3>
+      <ul><li>Хэрэглэгч, захиалагчтай ойлголцож, хүссэнийг нь код болгож чаддаг</li></ul>
+      <h3>🌐 Англи хэл</h3>
+      <ul><li>Бичгээр — сайн · Яриагаар — дунд</li></ul>`
+  },
+  E: {
+    title: "ТУРШЛАГА",
+    color: "#76ff03",
+    label: "Туршлага",
+    html: `
+      <h3>Sodon Solution — Программист</h3>
+      <p>4 жил</p>
+      <ul><li>Жижигээс том хүртэлх олон системийг эхнээс нь дуустал хөгжүүлсэн</li><li>Захиалагчтай шууд харилцаж, шаардлагыг бодит шийдэл болгож сурсан газар</li></ul>
+      <h3>MCS · M Bank — Программист</h3>
+      <p>6 сар</p>
+      <ul><li>Банкны түвшний өндөр стандарттай орчинд системийн хөгжүүлэлт хийсэн</li></ul>
+      <h3>Хувийн төслүүд</h3>
+      <p>2020 оноос хойш</p>
+      <ul><li>Чөлөөт цаг бүрээ шинэ санаа турших, өөрийн бүтээл хийхэд зарцуулдаг</li></ul>`
+  },
+  P: {
+    title: "ТӨСЛҮҮД",
+    color: "#ff6ec7",
+    label: "Төслүүд",
+    html: `
+      <p>ERP-ээс эхлээд GPS, камер хяналт, тоног төхөөрөмжийн систем хүртэл — <strong>хийгээд үзээгүй төрөл бараг үгүй</strong>.</p>
+      <h3>🏢 ERP, бизнес системүүд</h3>
+      <p>Байгууллагын үйл ажиллагааг бүхэлд нь автоматжуулсан томоохон системүүд.</p>
+      <h3>📡 GPS, байршил хянах системүүд</h3>
+      <p>Тээврийн хэрэгсэл, обьектын байршлыг бодит цагт хянадаг шийдлүүд.</p>
+      <h3>📹 Камер хяналтын системүүд</h3>
+      <p>Хяналтын камертай холбогдож, бодит цагийн мониторинг хийдэг системүүд.</p>
+      <h3>🌐 Online / Offline системүүд</h3>
+      <p>Вэб дээр ч, интернэтгүй орчинд ч тасралтгүй ажилладаг шийдлүүд.</p>
+      <h3>⚙️ Тоног төхөөрөмжийн интеграц</h3>
+      <p>Төрөл бүрийн төхөөрөмж, hardware-тэй шууд холбогддог системүүд.</p>
+      <h3>🏦 Банк, санхүүгийн систем</h3>
+      <p>M Bank-д банкны системийн хөгжүүлэлтэд оролцсон.</p>
+      <h3>📱 Утасны аппликейшнууд</h3>
+      <p>Хөзрийн тоглоом, зээлийн апп зэрэг олон төрлийн мобайл апп.</p>
+      <h3>🟡 Энэ тоглоом</h3>
+      <p>Pac-Man маягийн интерактив танилцуулга — цэвэр JS + Canvas.</p>
+      <p><em>...мөн эдгээрээс гадна арвин том жижиг төсөл бий.</em></p>`
+  },
+  C: {
+    title: "ХОЛБОО БАРИХ",
+    color: "#ff9100",
+    label: "Холбоо",
+    html: `
+      <p>📧 <a href="mailto:shinebayar.davaasuren@gmail.com">shinebayar.davaasuren@gmail.com</a></p>
+      <p>📍 Улаанбаатар, Монгол</p>
+      <p>Хамтран ажиллах саналаа имэйлээр илгээгээрэй — хурдан хариулна 😉</p>`
+  }
+};
+
+/* ════════════════════════════════════════════════════════════
+   MAZE LAYOUT  (# = wall, . = path, letters = doors)
+   ════════════════════════════════════════════════════════════ */
+const MAZE = [
+  "#####################",
+  "#A........#........S#",
+  "#.###.###.#.###.###.#",
+  "#.....#...#...#.....#",
+  "###.#.#.#####.#.#.###",
+  "#...#.....#.....#...#",
+  "#.#####.#.#.#.#####.#",
+  "#.......#.C.#.......#",
+  "#.#####.#####.#####.#",
+  "#...#.....#.....#...#",
+  "###.#.#.#####.#.#.###",
+  "#.....#...#...#.....#",
+  "#.###.###.#.###.###.#",
+  "#E........#........P#",
+  "#####################"
+];
+
+const TILE = 32;
+const COLS = MAZE[0].length;
+const ROWS = MAZE.length;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = COLS * TILE;
+canvas.height = ROWS * TILE;
+
+/* ---------- world state ---------- */
+const doors = [];   // {x, y, key}
+const dots = new Set();
+for (let y = 0; y < ROWS; y++) {
+  for (let x = 0; x < COLS; x++) {
+    const c = MAZE[y][x];
+    if (c === '.') dots.add(x + ',' + y);
+    else if (CV_DATA[c]) doors.push({ x, y, key: c });
+  }
+}
+const totalDots = dots.size;
+let score = 0;
+const visited = new Set();
+
+function isWall(x, y) {
+  if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return true;
+  return MAZE[y][x] === '#';
+}
+
+/* ---------- player ---------- */
+const START = { x: 9, y: 11 };
+const player = {
+  px: START.x * TILE + TILE / 2,
+  py: START.y * TILE + TILE / 2,
+  dir: null,       // {dx, dy}
+  speed: 2.4,
+  mouth: 0
+};
+const DIRS = {
+  up:    { dx: 0, dy: -1 },
+  down:  { dx: 0, dy: 1 },
+  left:  { dx: -1, dy: 0 },
+  right: { dx: 1, dy: 0 }
+};
+
+/* held keys (most recent last) — player moves ONLY while a key/button is held.
+   stickyDir is for swipe on mobile: keeps moving until a wall or new swipe. */
+const held = [];
+let stickyDir = null;
+function pressDir(name) {
+  const i = held.indexOf(name);
+  if (i >= 0) held.splice(i, 1);
+  held.push(name);
+  stickyDir = null;
+}
+function releaseDir(name) {
+  const i = held.indexOf(name);
+  if (i >= 0) held.splice(i, 1);
+}
+function desiredDirs() {
+  const list = [];
+  for (let i = held.length - 1; i >= 0; i--) list.push(held[i]);
+  if (stickyDir) list.push(stickyDir);
+  return list;
+}
+
+/* ---------- ghosts (harmless-ish: they send you back to start) ---------- */
+const ghosts = [
+  { px: 1.5 * TILE, py: 5.5 * TILE, dir: DIRS.down, color: '#ff5555', speed: 1.4 },
+  { px: 19.5 * TILE, py: 9.5 * TILE, dir: DIRS.up, color: '#bb88ff', speed: 1.4 }
+];
+
+let doorCooldown = null; // door key we're standing on after closing modal
+let won = false;
+
+/* ---------- HUD chips ---------- */
+const hud = document.getElementById('hud');
+for (const key of Object.keys(CV_DATA)) {
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.id = 'chip-' + key;
+  chip.style.setProperty('--chip-color', CV_DATA[key].color);
+  chip.textContent = CV_DATA[key].label;
+  hud.appendChild(chip);
+}
+
+/* ---------- input ---------- */
+const KEYMAP = {
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  w: 'up', s: 'down', a: 'left', d: 'right',
+  W: 'up', S: 'down', A: 'left', D: 'right',
+  ц: 'up', ы: 'down', а: 'left', в: 'right'
+};
+window.addEventListener('keydown', e => {
+  if (KEYMAP[e.key]) {
+    e.preventDefault();
+    if (!e.repeat) pressDir(KEYMAP[e.key]);
+  }
+  if (e.key === 'Escape') closeModal();
+});
+window.addEventListener('keyup', e => {
+  if (KEYMAP[e.key]) releaseDir(KEYMAP[e.key]);
+});
+window.addEventListener('blur', () => { held.length = 0; });
+
+document.querySelectorAll('#dpad button').forEach(btn => {
+  const name = btn.dataset.dir;
+  const on = e => { e.preventDefault(); pressDir(name); };
+  const off = () => releaseDir(name);
+  btn.addEventListener('touchstart', on, { passive: false });
+  btn.addEventListener('touchend', off);
+  btn.addEventListener('touchcancel', off);
+  btn.addEventListener('mousedown', on);
+  btn.addEventListener('mouseup', off);
+  btn.addEventListener('mouseleave', off);
+});
+
+/* swipe on canvas */
+let touchStart = null;
+canvas.addEventListener('touchstart', e => {
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+canvas.addEventListener('touchend', e => {
+  if (!touchStart) return;
+  const dx = e.changedTouches[0].clientX - touchStart.x;
+  const dy = e.changedTouches[0].clientY - touchStart.y;
+  if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
+  if (Math.abs(dx) > Math.abs(dy)) stickyDir = dx > 0 ? 'right' : 'left';
+  else stickyDir = dy > 0 ? 'down' : 'up';
+  touchStart = null;
+}, { passive: true });
+
+/* ---------- modal ---------- */
+const overlay = document.getElementById('overlay');
+const modal = document.getElementById('modal');
+let modalOpen = false;
+
+function openDoor(key) {
+  const d = CV_DATA[key];
+  document.getElementById('modalTitle').textContent = d.title;
+  document.getElementById('modalBody').innerHTML = d.html;
+  modal.style.setProperty('--modal-color', d.color);
+  overlay.classList.add('open');
+  modalOpen = true;
+  if (!visited.has(key)) {
+    visited.add(key);
+    document.getElementById('chip-' + key).classList.add('visited');
+    if (visited.size === Object.keys(CV_DATA).length) {
+      won = true;
+      document.getElementById('winBanner').style.display = 'block';
+    }
+  }
+  beep(520, .12);
+}
+
+function closeModal() {
+  if (!modalOpen) return;
+  overlay.classList.remove('open');
+  modalOpen = false;
+}
+document.getElementById('modalClose').addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+
+/* ---------- tiny sound ---------- */
+let audioCtx = null;
+function beep(freq, dur) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = freq;
+    o.type = 'square';
+    g.gain.value = 0.03;
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
+}
+
+/* ---------- movement helpers ---------- */
+function tileOf(px, py) {
+  return { x: Math.floor(px / TILE), y: Math.floor(py / TILE) };
+}
+function centered(px, py) {
+  const cx = Math.floor(px / TILE) * TILE + TILE / 2;
+  const cy = Math.floor(py / TILE) * TILE + TILE / 2;
+  return Math.abs(px - cx) < 3 && Math.abs(py - cy) < 3;
+}
+function snap(ent) {
+  ent.px = Math.floor(ent.px / TILE) * TILE + TILE / 2;
+  ent.py = Math.floor(ent.py / TILE) * TILE + TILE / 2;
+}
+function canGo(ent, dir) {
+  const t = tileOf(ent.px, ent.py);
+  return !isWall(t.x + dir.dx, t.y + dir.dy);
+}
+
+function moveEntity(ent) {
+  if (!ent.dir) return;
+  ent.px += ent.dir.dx * ent.speed;
+  ent.py += ent.dir.dy * ent.speed;
+  // wall collision: if center crossed into wall tile, push back
+  const ahead = tileOf(
+    ent.px + ent.dir.dx * (TILE / 2 - 4),
+    ent.py + ent.dir.dy * (TILE / 2 - 4)
+  );
+  if (isWall(ahead.x, ahead.y)) {
+    snap(ent);
+    return true; // blocked
+  }
+  return false;
+}
+
+/* ---------- update ---------- */
+function update() {
+  if (modalOpen) return;
+
+  /* player direction: moves only while a key is held (or after a swipe) */
+  if (centered(player.px, player.py)) {
+    let chosen = null;
+    for (const name of desiredDirs()) {
+      if (canGo(player, DIRS[name])) { chosen = DIRS[name]; break; }
+    }
+    if (chosen !== player.dir) snap(player);
+    player.dir = chosen; // null = stop at tile center
+  } else if (player.dir) {
+    /* allow instant reversal mid-tile */
+    for (const name of desiredDirs()) {
+      const d = DIRS[name];
+      if (d.dx === -player.dir.dx && d.dy === -player.dir.dy) { player.dir = d; break; }
+    }
+  }
+
+  const blocked = moveEntity(player);
+  if (blocked) { player.dir = null; stickyDir = null; }
+  if (player.dir) player.mouth += 0.25;
+
+  const pt = tileOf(player.px, player.py);
+
+  /* eat dots */
+  const k = pt.x + ',' + pt.y;
+  if (dots.has(k) && centered(player.px, player.py)) {
+    dots.delete(k);
+    score++;
+    document.getElementById('score').textContent = '● ' + score + ' / ' + totalDots;
+    if (score % 4 === 0) beep(880, .05);
+  }
+
+  /* doors */
+  const door = doors.find(d => d.x === pt.x && d.y === pt.y);
+  if (door) {
+    if (doorCooldown !== door.key && centered(player.px, player.py)) {
+      snap(player);
+      player.dir = null;
+      stickyDir = null;
+      doorCooldown = door.key;
+      openDoor(door.key);
+    }
+  } else {
+    doorCooldown = null;
+  }
+
+  /* ghosts */
+  for (const g of ghosts) {
+    if (centered(g.px, g.py)) {
+      const t = tileOf(g.px, g.py);
+      const tileKey = t.x + ',' + t.y;
+      /* шийдвэрийг нэг нүдэнд ганцхан удаа гаргана (нүд чичрэх алдааны засвар) */
+      if (g.lastDecision !== tileKey) {
+        g.lastDecision = tileKey;
+        const options = Object.values(DIRS).filter(d => {
+          if (g.dir && d.dx === -g.dir.dx && d.dy === -g.dir.dy) return false;
+          return canGo(g, d);
+        });
+        if (options.length === 0) {
+          g.dir = { dx: -g.dir.dx, dy: -g.dir.dy };
+        } else if (options.length > 1 || !canGo(g, g.dir)) {
+          snap(g);
+          g.dir = options[Math.floor(Math.random() * options.length)];
+        }
+      }
+    }
+    moveEntity(g);
+    /* catch player → back to start */
+    if (Math.hypot(g.px - player.px, g.py - player.py) < TILE * 0.6) {
+      player.px = START.x * TILE + TILE / 2;
+      player.py = START.y * TILE + TILE / 2;
+      player.dir = null;
+      stickyDir = null;
+      beep(150, .3);
+    }
+  }
+}
+
+/* ---------- draw ---------- */
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  /* walls */
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (MAZE[y][x] === '#') {
+        ctx.fillStyle = '#1a1a4a';
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+        ctx.strokeStyle = '#3344cc';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x * TILE + 3, y * TILE + 3, TILE - 6, TILE - 6);
+      }
+    }
+  }
+
+  /* dots */
+  ctx.fillStyle = '#ffd966';
+  for (const key of dots) {
+    const [x, y] = key.split(',').map(Number);
+    ctx.beginPath();
+    ctx.arc(x * TILE + TILE / 2, y * TILE + TILE / 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /* doors */
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
+  for (const d of doors) {
+    const info = CV_DATA[d.key];
+    const x = d.x * TILE, y = d.y * TILE;
+    ctx.save();
+    ctx.shadowColor = info.color;
+    ctx.shadowBlur = 14 * pulse;
+    ctx.fillStyle = info.color;
+    ctx.globalAlpha = visited.has(d.key) ? 0.45 : 0.9;
+    ctx.fillRect(x + 4, y + 2, TILE - 8, TILE - 4);
+    /* door arch */
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(x + 10, y + 12, TILE - 20, TILE - 14);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    /* label */
+    ctx.font = 'bold 9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = info.color;
+    const labelY = d.y === 0 || d.y < ROWS / 2 ? y - 3 : y + TILE + 10;
+    ctx.fillText(info.label.toUpperCase(), x + TILE / 2, d.y === 1 ? y + TILE + 10 : labelY);
+  }
+
+  /* ghosts */
+  for (const g of ghosts) {
+    ctx.fillStyle = g.color;
+    ctx.beginPath();
+    ctx.arc(g.px, g.py - 2, 11, Math.PI, 0);
+    ctx.lineTo(g.px + 11, g.py + 9);
+    for (let i = 0; i < 3; i++) {
+      ctx.lineTo(g.px + 11 - (i * 2 + 1) * (22 / 6), g.py + 5);
+      ctx.lineTo(g.px + 11 - (i * 2 + 2) * (22 / 6), g.py + 9);
+    }
+    ctx.closePath();
+    ctx.fill();
+    /* eyes */
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(g.px - 4, g.py - 3, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(g.px + 4, g.py - 3, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#223';
+    const ex = g.dir ? g.dir.dx * 1.5 : 0, ey = g.dir ? g.dir.dy * 1.5 : 0;
+    ctx.beginPath(); ctx.arc(g.px - 4 + ex, g.py - 3 + ey, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(g.px + 4 + ex, g.py - 3 + ey, 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /* player (pac-man) */
+  const open = Math.abs(Math.sin(player.mouth)) * 0.28 + 0.02;
+  let angle = 0;
+  if (player.dir === DIRS.up) angle = -Math.PI / 2;
+  else if (player.dir === DIRS.down) angle = Math.PI / 2;
+  else if (player.dir === DIRS.left) angle = Math.PI;
+  ctx.save();
+  ctx.translate(player.px, player.py);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#ffd700';
+  ctx.shadowColor = '#ffd700';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, open * Math.PI, (2 - open) * Math.PI);
+  ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- үндсэн давталт ---------- */
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+document.getElementById('score').textContent = '● 0 / ' + totalDots;
+loop();
+</script>
+</body>
+</html>
